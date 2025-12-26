@@ -1,0 +1,48 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: paseto-postgres
+    environment:
+      POSTGRES_DB: mydatabase
+      POSTGRES_PASSWORD: secret
+      POSTGRES_USER: myuser
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U myuser -d mydatabase"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - paseto-network
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: paseto-app
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/mydatabase
+      SPRING_DATASOURCE_USERNAME: myuser
+      SPRING_DATASOURCE_PASSWORD: secret
+      # PASETO v4 Configuration
+      # IMPORTANT: Change these values in production!
+      PASETO_LOCAL_SECRET_KEY: your-local-secret-key-minimum-32-chars-long-for-paseto-v4!!!
+      PASETO_ISSUER: paseto-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - paseto-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  paseto-network:
+    driver: bridge

@@ -1,0 +1,37 @@
+spring:
+  application:
+    name: paseto-app
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/mydatabase
+    username: myuser
+    password: secret
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+
+  docker:
+    compose:
+      enabled: true
+
+server:
+  port: 8080
+
+# PASETO v4 Configuration
+paseto:
+  # Local secret key for v4.local (access tokens) - MUST be 32+ characters
+  # In production, use environment variable: PASETO_LOCAL_SECRET_KEY
+  local-secret-key: ${PASETO_LOCAL_SECRET_KEY:your-local-secret-key-minimum-32-chars-long!!!}
+  # Issuer claim for tokens
+  issuer: ${PASETO_ISSUER:paseto-api}
+  # Access token expiration (15 minutes in seconds)
+  access-token-expiration: 900
+  # Refresh token expiration (7 days in seconds)
+  refresh-token-expiration: 604800
