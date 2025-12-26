@@ -35,3 +35,9 @@ paseto:
   access-token-expiration: 900
   # Refresh token expiration (7 days in seconds)
   refresh-token-expiration: 604800
+
+# SpringDoc OpenAPI (Swagger UI) Configuration
+springdoc:
+  display-request-duration: true
+  swagger-ui:
+    display-request-duration: true

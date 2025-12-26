@@ -5,13 +5,16 @@ import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Contact;
 import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.info.License;
+import io.swagger.v3.oas.models.media.StringSchema;
 import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
 import io.swagger.v3.oas.models.servers.Server;
+import org.springdoc.core.customizers.OpenApiCustomizer;
 import org.springdoc.core.models.GroupedOpenApi;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 
 @Configuration
@@ -90,6 +93,25 @@ public class OpenApiConfig {
         return GroupedOpenApi.builder()
                 .group("all")
                 .packagesToScan("com.paseto.controller")
+                .addOpenApiCustomizer(responseTimeCustomizer())
                 .build();
+    }
+
+    private OpenApiCustomizer responseTimeCustomizer() {
+        return openApi -> openApi.getPaths().values().stream()
+                .flatMap(pathItem -> pathItem.readOperations().stream())
+                .forEach(operation -> {
+                    io.swagger.v3.oas.models.headers.Header responseTimeHeader =
+                            new io.swagger.v3.oas.models.headers.Header()
+                                    .description("Request processing time in milliseconds")
+                                    .schema(new StringSchema().example("45 ms"));
+
+                    operation.getResponses().forEach((code, response) -> {
+                        if (response.getHeaders() == null) {
+                            response.setHeaders(new LinkedHashMap<>());
+                        }
+                        response.getHeaders().put("X-Response-Time", responseTimeHeader);
+                    });
+                });
     }
 }
