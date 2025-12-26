@@ -1182,12 +1182,21 @@ Interactive API documentation is available at:
 http://localhost:8080/swagger-ui.html
 ```
 
+### API Documentation Overview
+
+![Swagger UI Overview](img/1.png)
+
+### Authorization Setup
+
+![Swagger UI Authorization](img/2.png)
+
 ### Features
 
 - **Try it out** - Test endpoints directly from the browser
 - **Request/Response schemas** - View data models
 - **Authorization** - Configure PASETO tokens for protected endpoints
 - **Example requests** - Sample request bodies for each endpoint
+- **Response Duration** - View API request processing time in milliseconds
 
 ### Using Authorization in Swagger
 
