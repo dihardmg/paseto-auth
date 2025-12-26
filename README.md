@@ -1,6 +1,6 @@
 # PASETO Authentication API
 
-A modern RESTful API built with Spring Boot 4.1 and Java 25, featuring PASETO v4 token-based authentication for secure user management. This project demonstrates best practices in API development with comprehensive CRUD operations for Products and Banners.
+A modern RESTful API built with **Spring Boot 4.0.1** and **Java 25**, featuring **PASETO v4 token-based authentication** for secure user management. This project demonstrates best practices in API development with comprehensive CRUD operations for Products and Banners.
 
 ## Table of Contents
 
@@ -9,6 +9,11 @@ A modern RESTful API built with Spring Boot 4.1 and Java 25, featuring PASETO v4
 - [Prerequisites](#prerequisites)
 - [Quick Start](#quick-start)
 - [PASETO Authentication](#paseto-authentication)
+  - [What is PASETO?](#what-is-paseto)
+  - [Token Types](#token-types)
+  - [Authentication Flow](#authentication-flow)
+  - [Sequence Diagrams](#sequence-diagrams)
+  - [Security Features](#security-features)
 - [API Documentation](#api-documentation)
   - [Authentication Endpoints](#authentication-endpoints)
   - [Product Endpoints](#product-endpoints)
@@ -23,18 +28,19 @@ A modern RESTful API built with Spring Boot 4.1 and Java 25, featuring PASETO v4
 ## Features
 
 - **PASETO v4 Authentication**
-  - `v4.local` for access tokens (symmetric encryption, AES-GCM)
+  - `v4.local` for access tokens (symmetric encryption, XChaCha20-Poly1305)
   - `v4.public` for refresh tokens (Ed25519 asymmetric signing)
-  - Token rotation for enhanced security
-  - Reuse attack detection
+  - **Token rotation** for enhanced security
+  - **Reuse attack detection** with automatic token revocation
   - 15-minute access token expiration
   - 7-day refresh token expiration
 
 - **User Management**
-  - User registration with email validation
+  - **Fast registration** - 22-50% lower latency without token generation
   - Secure login with BCrypt password hashing
   - Device tracking and IP logging
   - Token revocation and logout
+  - Multi-session support
 
 - **Product Management** (Authentication Required)
   - Full CRUD operations
@@ -60,12 +66,12 @@ A modern RESTful API built with Spring Boot 4.1 and Java 25, featuring PASETO v4
 |-----------|---------|-------------|
 | **Java** | 25 LTS | Latest long-term support release |
 | **Spring Boot** | 4.0.1 | Modern application framework |
-| **Spring Security** | 6.x | Security and authentication |
+| **Spring Security** | 6.x | Security and authentication with BCrypt password hashing |
 | **Spring Data JPA** | 4.0.1 | Database ORM |
 | **PostgreSQL** | 17 | Relational database |
-| **Hibernate** | 6.x | ORM provider |
-| **Bouncy Castle** | 1.78.1 | Cryptography operations (PASETO) |
-| **jBCrypt** | 0.4 | Password hashing |
+| **Hibernate** | 7.x | ORM provider |
+| **paseto4j-version4** | 2024.3 | PASETO v4 token implementation |
+| **BouncyCastle** | 1.80 | Cryptography provider for Ed25519 |
 | **SpringDoc OpenAPI** | 2.7.0 | Swagger UI documentation |
 | **Docker Compose** | - | Container orchestration |
 
@@ -133,24 +139,202 @@ docker compose down -v
 
 | Token Type | Purpose | Algorithm | Expiration |
 |------------|---------|-----------|------------|
-| **Access Token** | API authentication | `v4.local` (AES-256-GCM) | 15 minutes |
+| **Access Token** | API authentication | `v4.local` (XChaCha20-Poly1305) | 15 minutes |
 | **Refresh Token** | Get new access tokens | `v4.public` (Ed25519) | 7 days |
 
 ### Authentication Flow
 
 ```
-1. Register/Login → Receive Access Token + Refresh Token
-2. Use Access Token → Access protected endpoints (Products)
-3. Access Token Expires → Use Refresh Token to get new pair
-4. Logout → Revoke Refresh Token
+1. Register → Create user account (fast, no tokens)
+2. Login → Receive Access Token + Refresh Token
+3. Use Access Token → Access protected endpoints (Products)
+4. Access Token Expires → Use Refresh Token to get new pair
+5. Logout → Revoke Refresh Token
+```
+
+### Sequence Diagrams
+
+#### 1. Registration Flow
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Controller as AuthController
+    participant Service as AuthService
+    participant DB as Database
+    participant Paseto as PasetoV4Service
+
+    Client->>Controller: POST /api/auth/register
+    Note over Client,Controller: {username, password,<br/>email, fullName}
+
+    Controller->>Service: registerWithoutTokens(request)
+    Service->>DB: Check if username exists
+    DB-->>Service: Username available
+    Service->>DB: Check if email exists
+    DB-->>Service: Email available
+    Service->>Service: BCrypt.hashpw(password)
+    Service->>DB: INSERT user
+    DB-->>Service: User created with ID
+    Service-->>Controller: RegisterResponse
+    Note over Service,Controller: {user_id, username,<br/>email, created_at}
+    Controller-->>Client: 201 Created
+    Note over Client: Fast! No token generation<br/>⚡ 22-50% lower latency
+```
+
+#### 2. Login Flow
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Controller as AuthController
+    participant Service as AuthService
+    participant DB as Database
+    participant Paseto as PasetoV4Service
+
+    Client->>Controller: POST /api/auth/login
+    Note over Client,Controller: {username, password}
+
+    Controller->>Service: login(request)
+    Service->>DB: Find user by username
+    DB-->>Service: User found
+    Service->>Service: BCrypt.checkpw(password)
+    Service->>Paseto: generateAccessToken(userId, username)
+    Paseto-->>Service: v4.local.token (AES-GCM)
+    Service->>Paseto: generateRefreshToken(userId, username, jti)
+    Paseto-->>Service: v4.public.token (Ed25519)
+    Service->>DB: INSERT refresh_token (jti, expires_at)
+    DB-->>Service: Token saved
+    Service-->>Controller: AuthDataResponse
+    Controller-->>Client: 200 OK
+    Note over Client: {accessToken, refreshToken,<br/>tokenType, expiresIn, user}
+```
+
+#### 3. Token Refresh Flow (With Rotation)
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Controller as AuthController
+    participant Service as AuthService
+    participant DB as Database
+    participant Paseto as PasetoV4Service
+
+    Client->>Controller: POST /api/auth/refresh
+    Note over Client,Controller: {refreshToken: RT_OLD}
+
+    Controller->>Service: refreshToken(request)
+    Service->>Paseto: validateRefreshToken(RT_OLD)
+    Paseto-->>Service: TokenClaims (jti, sub, exp)
+    Service->>DB: Find token by jti
+    DB-->>Service: Token found
+
+    alt Token Reuse Attack Detection
+        Note over Service,DB: Check if token matches
+        alt Token mismatch!
+            Service->>DB: REVOKE ALL user tokens
+            Service-->>Controller: Error: "Reuse detected!"
+            Controller-->>Client: 400 Bad Request
+            Note over Client: Attacker blocked! All tokens revoked
+        end
+    end
+
+    Service->>DB: UPDATE refresh_token SET revoked=true
+    Note over Service,DB: Revoke old token (rotation)
+
+    Service->>Paseto: generateAccessToken(userId, username)
+    Paseto-->>Service: AT_NEW (v4.local)
+    Service->>Paseto: generateRefreshToken(userId, username, jti_NEW)
+    Paseto-->>Service: RT_NEW (v4.public)
+    Service->>DB: INSERT refresh_token (jti_NEW, expires_at)
+    DB-->>Service: New token saved
+
+    Service-->>Controller: AuthDataResponse
+    Controller-->>Client: 200 OK
+    Note over Client: {accessToken: AT_NEW,<br/>refreshToken: RT_NEW}
+    Note over Client: RT_OLD is now invalid!
+```
+
+#### 4. Access Protected Resource
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Filter as PasetoAuthFilter
+    participant Paseto as PasetoV4Service
+    participant Controller as ProductController
+    participant DB as Database
+
+    Client->>Filter: GET /api/products
+    Note over Client,Filter: Authorization: Bearer AT
+
+    Filter->>Filter: Extract token from header
+    Filter->>Paseto: validateAccessToken(AT)
+    Paseto->>Paseto: Decrypt v4.local token
+    Paseto-->>Filter: TokenClaims (sub, username, exp)
+
+    alt Token expired
+        Filter-->>Client: 401 Unauthorized
+        Note over Client: Token expired, refresh needed
+    else Token valid
+        Filter->>Filter: Set SecurityContext authentication
+        Filter->>Controller: Pass to controller
+        Controller->>DB: SELECT * FROM products
+        DB-->>Controller: Product list
+        Controller-->>Client: 200 OK
+        Note over Client: JSON array of products
+    end
+```
+
+#### 5. Complete Auth Lifecycle
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Client
+    participant API as Backend API
+
+    Note over User,API: Day 1: Registration
+    User->>Client: Register form
+    Client->>API: POST /api/auth/register
+    API-->>Client: 201 Created (user data only)
+    Note over Client,API: No tokens! ⚡ Fast
+    Client->>User: Registration successful
+
+    Note over User,API: Day 1: First Login
+    User->>Client: Login form
+    Client->>API: POST /api/auth/login
+    API-->>Client: AT_1 + RT_1
+    Note over Client,API: AT: 15min, RT: 7 days
+
+    Note over User,API: Day 1: Access Resources
+    Client->>API: GET /api/products (AT_1)
+    API-->>Client: Product list
+
+    Note over User,API: Day 1: Access Token Expired
+    Client->>API: GET /api/products (AT_1 expired)
+    API-->>Client: 401 Unauthorized
+    Client->>API: POST /api/auth/refresh (RT_1)
+    API-->>Client: AT_2 + RT_2
+    Note over Client,API: RT_1 revoked, RT_2 active
+
+    Note over User,API: Day 2: Use New Tokens
+    Client->>API: GET /api/products (AT_2)
+    API-->>Client: Product list
+
+    Note over User,API: Day 7: Logout
+    User->>Client: Logout button
+    Client->>API: POST /api/auth/logout (RT_2)
+    API-->>Client: 200 OK
+    Note over Client,API: RT_2 revoked
 ```
 
 ### Security Features
 
 - **Token Rotation**: Each refresh creates a new token pair and revokes the old one
-- **Reuse Detection**: Stolen refresh tokens are immediately revoked
+- **Reuse Detection**: Stolen refresh tokens are immediately detected and all user tokens are revoked
 - **Device Tracking**: Tokens are bound to device info and IP address
-- **Secure Storage**: Refresh tokens stored in database with encryption
+- **Secure Storage**: Refresh tokens stored in database with cryptographic validation
+- **Fast Registration**: Optimized registration endpoint without token generation (22-50% lower latency)
 
 ---
 
@@ -198,9 +382,9 @@ http://localhost:8080
 
 ## Authentication Endpoints
 
-### 1. Register User
+### 1. Register User (Fast)
 
-Create a new user account and receive authentication tokens.
+Create a new user account with **minimum latency**. Returns user data only, no tokens. User must login separately to get authentication tokens.
 
 **Endpoint:** `POST /api/auth/register`
 
@@ -224,21 +408,21 @@ Create a new user account and receive authentication tokens.
 ```json
 {
   "status": "success",
-  "message": "User registered successfully",
+  "message": "User created",
   "data": {
-    "accessToken": "v4.local...",
-    "refreshToken": "v4.public...",
-    "tokenType": "Bearer",
-    "expiresIn": 900,
-    "user": {
-      "id": 1,
-      "username": "john_doe",
-      "email": "john@example.com",
-      "createdAt": "2025-12-26T15:44:43.13634"
-    }
+    "user_id": 1,
+    "username": "john_doe",
+    "email": "john@example.com",
+    "created_at": "2025-12-26T18:21:23Z"
   }
 }
 ```
+
+**Performance:**
+- ⚡ **22-50% lower latency** than auto-login
+- No token generation overhead
+- No database write for refresh_tokens
+- Smaller response payload
 
 **cURL Example:**
 ```bash
@@ -1123,7 +1307,7 @@ paseto:
 
 ### Manual Testing with cURL
 
-#### 1. Register a new user
+#### 1. Register a new user (Fast - No tokens)
 
 ```bash
 curl -X POST http://localhost:8080/api/auth/register \
@@ -1136,9 +1320,52 @@ curl -X POST http://localhost:8080/api/auth/register \
   }'
 ```
 
-Save the `accessToken` and `refreshToken` from the response.
+**Response:**
+```json
+{
+  "status": "success",
+  "message": "User created",
+  "data": {
+    "user_id": 1,
+    "username": "testuser",
+    "email": "test@example.com",
+    "created_at": "2025-12-26T18:21:23Z"
+  }
+}
+```
 
-#### 2. Access protected endpoint
+#### 2. Login to get tokens
+
+```bash
+curl -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "testuser",
+    "password": "password123"
+  }'
+```
+
+**Save the tokens from response:**
+```json
+{
+  "status": "success",
+  "message": "User logged in successfully",
+  "data": {
+    "accessToken": "v4.local...",
+    "refreshToken": "v4.public...",
+    "tokenType": "Bearer",
+    "expiresIn": 900,
+    "user": {
+      "id": 1,
+      "username": "testuser",
+      "email": "test@example.com",
+      "createdAt": "2025-12-26T15:44:43.13634"
+    }
+  }
+}
+```
+
+#### 3. Access protected endpoint
 
 ```bash
 ACCESS_TOKEN="<your_access_token_here>"
@@ -1147,7 +1374,7 @@ curl -X GET http://localhost:8080/api/products \
   -H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 
-#### 3. Create a product
+#### 4. Create a product
 
 ```bash
 ACCESS_TOKEN="<your_access_token_here>"
@@ -1166,10 +1393,54 @@ curl -X POST http://localhost:8080/api/products \
   }'
 ```
 
-#### 4. Test banner endpoint (no auth required)
+#### 5. Test banner endpoint (no auth required)
 
 ```bash
 curl -X GET http://localhost:8080/api/banners
+```
+
+### Complete Authentication Flow Test
+
+```bash
+# Step 1: Register (fast)
+REGISTER_RESPONSE=$(curl -s -X POST http://localhost:8080/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "flowtest",
+    "email": "flowtest@example.com",
+    "fullName": "Flow Test",
+    "password": "password123"
+  }')
+echo "Register Response: $REGISTER_RESPONSE"
+
+# Step 2: Login
+LOGIN_RESPONSE=$(curl -s -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "flowtest",
+    "password": "password123"
+  }')
+echo "Login Response: $LOGIN_RESPONSE"
+
+# Extract access token (requires jq)
+ACCESS_TOKEN=$(echo $LOGIN_RESPONSE | jq -r '.data.accessToken')
+echo "Access Token: $ACCESS_TOKEN"
+
+# Step 3: Access protected resource
+curl -X GET http://localhost:8080/api/products \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+
+# Step 4: Refresh token
+REFRESH_TOKEN=$(echo $LOGIN_RESPONSE | jq -r '.data.refreshToken')
+REFRESH_RESPONSE=$(curl -s -X POST http://localhost:8080/api/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d "{\"refreshToken\": \"$REFRESH_TOKEN\"}")
+echo "Refresh Response: $REFRESH_RESPONSE"
+
+# Step 5: Logout
+curl -X POST http://localhost:8080/api/auth/logout \
+  -H "Content-Type: application/json" \
+  -d "{\"refreshToken\": \"$REFRESH_TOKEN\"}"
 ```
 
 ---

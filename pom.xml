@@ -28,6 +28,7 @@
 	</scm>
 	<properties>
 		<java.version>25</java.version>
+		<paseto4j.version>2024.3</paseto4j.version>
 	</properties>
 	<dependencies>
 		<!-- Spring Boot Web MVC -->
@@ -61,6 +62,20 @@
 			<artifactId>spring-boot-starter-security</artifactId>
 		</dependency>
 
+		<!-- PASETO v4 Implementation -->
+		<dependency>
+			<groupId>io.github.nbaars</groupId>
+			<artifactId>paseto4j-version4</artifactId>
+			<version>${paseto4j.version}</version>
+		</dependency>
+
+		<!-- BouncyCastle Provider for Ed25519 -->
+		<dependency>
+			<groupId>org.bouncycastle</groupId>
+			<artifactId>bcprov-jdk18on</artifactId>
+			<version>1.80</version>
+		</dependency>
+
 		<!-- Lombok -->
 		<dependency>
 			<groupId>org.projectlombok</groupId>
@@ -74,27 +89,6 @@
 			<artifactId>spring-boot-docker-compose</artifactId>
 			<scope>runtime</scope>
 			<optional>true</optional>
-		</dependency>
-
-		<!-- BCrypt for password hashing -->
-		<dependency>
-			<groupId>org.mindrot</groupId>
-			<artifactId>jbcrypt</artifactId>
-			<version>0.4</version>
-		</dependency>
-
-		<!-- Bouncy Castle for crypto operations (PASETO v4) -->
-		<dependency>
-			<groupId>org.bouncycastle</groupId>
-			<artifactId>bcprov-jdk18on</artifactId>
-			<version>1.78.1</version>
-		</dependency>
-
-		<!-- Apache Commons Codec for Base64 encoding -->
-		<dependency>
-			<groupId>commons-codec</groupId>
-			<artifactId>commons-codec</artifactId>
-			<version>1.17.1</version>
 		</dependency>
 
 		<!-- SpringDoc OpenAPI (Swagger UI) -->
@@ -122,6 +116,13 @@
 			<artifactId>spring-boot-starter-test</artifactId>
 			<scope>test</scope>
 		</dependency>
+
+		<!-- H2 Database for Testing -->
+		<!-- <dependency>
+			<groupId>com.h2database</groupId>
+			<artifactId>h2</artifactId>
+			<scope>test</scope>
+		</dependency> -->
 	</dependencies>
 
 	<build>

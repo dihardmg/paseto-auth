@@ -2,6 +2,7 @@ package com.paseto.controller;
 
 import com.paseto.dto.*;
 import com.paseto.service.AuthService;
+import com.paseto.dto.RegisterResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -38,16 +39,13 @@ public class AuthController {
     }
 
     @Operation(
-            summary = "User registration",
-            description = "Register a new user account, returns access token (15min) and refresh token (7 days)"
+            summary = "User registration (Fast)",
+            description = "Register a new user account with minimum latency. Returns user data only. User must login separately to get tokens."
     )
     @PostMapping("/register")
-    public ResponseEntity<ApiResponse<AuthDataResponse>> register(
-            @Valid @RequestBody RegisterRequest request,
-            HttpServletRequest httpRequest) {
-        String deviceInfo = httpRequest.getHeader("User-Agent");
-        String ipAddress = getClientIp(httpRequest);
-        ApiResponse<AuthDataResponse> response = authService.register(request, deviceInfo, ipAddress);
+    public ResponseEntity<ApiResponse<RegisterResponse>> register(
+            @Valid @RequestBody RegisterRequest request) {
+        ApiResponse<RegisterResponse> response = authService.registerWithoutTokens(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 

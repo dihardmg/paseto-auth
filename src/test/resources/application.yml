@@ -1,0 +1,41 @@
+spring:
+  application:
+    name: paseto-app-test
+
+  datasource:
+    url: jdbc:h2:mem:testdb
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+        format_sql: false
+
+  docker:
+    compose:
+      enabled: false
+
+# H2 Console (optional, for debugging)
+h2:
+  console:
+    enabled: false
+
+# PASETO v4 Configuration
+paseto:
+  local-secret-key: test-secret-key-min-32-chars-long!!!
+  issuer: test-api
+  access-token-expiration: 900
+  refresh-token-expiration: 604800
+
+# Logging
+logging:
+  level:
+    com.paseto: DEBUG
+    org.hibernate.SQL: WARN
+    org.hibernate.type.descriptor.sql.BasicBinder: WARN

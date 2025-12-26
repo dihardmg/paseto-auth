@@ -7,7 +7,7 @@ import com.paseto.repository.RefreshTokenRepository;
 import com.paseto.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.mindrot.jbcrypt.BCrypt;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,13 +22,14 @@ public class AuthService {
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasetoV4Service pasetoV4Service;
+    private final BCryptPasswordEncoder passwordEncoder;
 
     @Transactional
     public ApiResponse<AuthDataResponse> login(LoginRequest request, String deviceInfo, String ipAddress) {
         User user = userRepository.findByUsername(request.getUsername())
                 .orElseThrow(() -> new IllegalArgumentException("Invalid username or password"));
 
-        if (!BCrypt.checkpw(request.getPassword(), user.getPassword())) {
+        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
             throw new IllegalArgumentException("Invalid username or password");
         }
 
@@ -47,13 +48,50 @@ public class AuthService {
 
         User user = new User();
         user.setUsername(request.getUsername());
-        user.setPassword(BCrypt.hashpw(request.getPassword(), BCrypt.gensalt()));
+        user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.setEmail(request.getEmail());
         user.setFullName(request.getFullName());
 
         user = userRepository.save(user);
 
         return createAuthResponse(user, deviceInfo, ipAddress, "User registered successfully");
+    }
+
+    /**
+     * Fast register - No token generation for minimum latency
+     * User must login separately after registration
+     */
+    @Transactional
+    public ApiResponse<RegisterResponse> registerWithoutTokens(RegisterRequest request) {
+        // Validation
+        if (userRepository.existsByUsername(request.getUsername())) {
+            throw new IllegalArgumentException("Username already exists");
+        }
+
+        if (userRepository.existsByEmail(request.getEmail())) {
+            throw new IllegalArgumentException("Email already exists");
+        }
+
+        // Create user
+        User user = new User();
+        user.setUsername(request.getUsername());
+        user.setPassword(passwordEncoder.encode(request.getPassword()));
+        user.setEmail(request.getEmail());
+        user.setFullName(request.getFullName());
+
+        user = userRepository.save(user);
+
+        // Build response - NO tokens, just user data
+        RegisterResponse data = RegisterResponse.builder()
+                .user_id(user.getId())
+                .username(user.getUsername())
+                .email(user.getEmail())
+                .created_at(user.getCreatedAt().atZone(java.time.ZoneId.systemDefault()).toInstant())
+                .build();
+
+        log.info("User registered (without tokens): {}", user.getUsername());
+
+        return ApiResponse.success("User created", data);
     }
 
     @Transactional
