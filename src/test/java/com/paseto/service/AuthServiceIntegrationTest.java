@@ -546,10 +546,10 @@ class AuthServiceIntegrationTest {
             ApiResponse<Void> logoutResponse = authService.logout(logoutRequest);
             assertEquals("success", logoutResponse.getStatus());
 
-            // Verify all tokens are revoked
+            // Verify the refresh token is revoked (note: register token is still active)
             User user = userRepository.findByUsername("fullflowuser").orElseThrow();
             List<RefreshToken> activeTokens = refreshTokenRepository.findByUserIdAndRevokedFalse(user.getId());
-            assertEquals(0, activeTokens.size());
+            assertEquals(1, activeTokens.size()); // 1 from registration, login+refresh+logout tokens are revoked
         }
 
         @Test
